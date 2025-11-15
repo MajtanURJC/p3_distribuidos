@@ -6,42 +6,42 @@
 #include <unistd.h>
 #include <string.h>
 #include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/select.h>
 #include <pthread.h>
+#include <signal.h>
+#include <semaphore.h>
 
-struct sockets {
-    int client_sock;   
-    int server_sock;  
+enum operations {
+    WRITE = 0,
+    READ
 };
 
-extern struct sockets sockets;
+struct request {
+    enum operations action;
+    unsigned int id;
+};
 
-extern pthread_mutex_t rw_mutex;       
-extern pthread_mutex_t mutex_readers;  
-extern pthread_cond_t cond;            
-extern int readers_count;              
-extern int writers_waiting;            
-extern int priority_readers;          
+struct response {
+    enum operations action;
+    unsigned int counter;
+    long latency_time;
+};
 
-
-void init_sync_primitives();
-void destroy_sync_primitives();
-
-
-void set_priority_readers();   
-void set_priority_writers();   
-
-
-void reader_enter();   
-void reader_exit();    
-void writer_enter();   
-void writer_exit();    
-
-
-void send_message(int sock, const char *msg);
-void receive_message(int sock, char *msg, size_t size);
+struct sockets {
+    int client_sock;
+    int server_sockets[600];
+};
 
 
 int initialize_server_connection(char *IP, char *port);
-int initialize_client_connection(char *IP, char *port);
+int initialize_client_connection(char *IP, char *port, int num_clients, int mode);
+int ready_to_shutdown();
+int send_client();
+int reader_stuff();
+int writter_stuff();
+void control_exit();
+void priority_readers();
+void priority_writters();
 
 #endif

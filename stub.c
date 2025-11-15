@@ -1,133 +1,205 @@
 #include "stub.h"
-#include <pthread.h>
-#include <unistd.h>
-#include <arpa/inet.h>
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
 
-struct sockets sockets;
-pthread_mutex_t rw_mutex;          
-pthread_mutex_t mutex_readers;     
-pthread_cond_t cond;               
-int readers_count = 0;
-int writers_waiting = 0;
-int priority_readers = 1;          
+receiver_thread[1000];
+int mode;
+int counter;
+sem_t sem_threads;
 
+void *receive_loop_client(char net_info[]) {
+    setbuf(stdout, NULL);
+    
+    struct sockets sockets;
+    struct response response;
+    int bytes_sended;
+    int bytes_received;
+    char text_oper[10];
 
-int max(int a, int b) { return (a > b) ? a : b; }
-
-void init_sync_primitives() {
-    pthread_mutex_init(&rw_mutex, NULL);
-    pthread_mutex_init(&mutex_readers, NULL);
-    pthread_cond_init(&cond, NULL);
-}
-
-void destroy_sync_primitives() {
-    pthread_mutex_destroy(&rw_mutex);
-    pthread_mutex_destroy(&mutex_readers);
-    pthread_cond_destroy(&cond);
-}
-
-
-void set_priority_readers() { 
-    priority_readers = 1; 
-}
-
-void set_priority_writers() { 
-    priority_readers = 0; 
-}
-
-
-void reader_enter() {
-    pthread_mutex_lock(&mutex_readers);
-    if (!priority_readers) {
-        while (writers_waiting > 0) {
-            pthread_cond_wait(&cond, &mutex_readers);
-        }
+    sockets.client_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockets.client_sock < 0) {
+        perror("Error on socket");
+        return -1;
     }
-    readers_count++;
-    if (readers_count == 1) pthread_mutex_lock(&rw_mutex);
-    pthread_mutex_unlock(&mutex_readers);
-}
 
-void reader_exit() {
-    pthread_mutex_lock(&mutex_readers);
-    readers_count--;
-    if (readers_count == 0) pthread_mutex_unlock(&rw_mutex);
-    if (!priority_readers) pthread_cond_signal(&cond);
-    pthread_mutex_unlock(&mutex_readers);
-}
-
-void writer_enter() {
-    pthread_mutex_lock(&mutex_readers);
-    writers_waiting++;
-    pthread_mutex_unlock(&mutex_readers);
-
-    pthread_mutex_lock(&rw_mutex);
-}
-
-void writer_exit() {
-    pthread_mutex_lock(&mutex_readers);
-    writers_waiting--;
-    pthread_mutex_unlock(&mutex_readers);
-
-    pthread_mutex_unlock(&rw_mutex);
-    pthread_cond_broadcast(&cond);
-}
-
-// Enviar y recibir mensajes simples
-void send_message(int sock, const char *msg) {
-    send(sock, msg, strlen(msg) + 1, 0);
-}
-
-void receive_message(int sock, char *msg, size_t size) {
-    recv(sock, msg, size, 0);
-}
-
-// Inicialización de conexión
-int initialize_server_connection(char *IP, char *port) {
-    int sockfd;
     struct sockaddr_in server_addr;
+    unsigned short host_port = (unsigned short) net_info[1];  //PORT
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) return -1;
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = inet_addr(net_info[0]);  //IP
+    server_addr.sin_port = htons(host_port);
+
+    if (connect(sockets.client_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Error on connect");
+        close(sockets.client_sock);
+        return -1;
+    }
+
+    
+    bytes_sended = send(sockets.client_sock, mode, sizeof(mode), 0);
+    if (bytes_sended < 0) {
+        perror("Error on send");
+        close(sockets.client_sock);
+        return NULL;
+    }
+
+    bytes_received = recv(sockets.client_sock, &response, sizeof(response), 0);
+    if (bytes_received < 0) {
+        perror("Error on recv");
+        return NULL;
+    }
+
+    if ( response.action == 0 ) {
+        strcpy(text_oper,"Lector");
+    } else {
+        strcpy(text_oper,"Escritor");
+    }
+
+    printf ( "Cliente #%d] %s, contador=%d, tiempo=%ld ns.\n",
+    net_info[2],text_oper, response.latency_time );
+    
+    close(sockets.client_sock);
+    return NULL;
+}
+
+
+void *receive_loop_server(void *arg) {
+    setbuf(stdout, NULL);
+
+    int sock = *(int *)arg;
+    struct response response;
+    int type;
+    int bytes_received;
+    int bytes_sended;
+
+    
+    bytes_received = recv(sock, type, sizeof(type), 0);
+    if (bytes_received < 0) {
+        perror("Error on recv");
+        return NULL;
+    }
+
+    if(type == 0) {
+        response.latency_time = writter_stuff();
+    } else {
+        response.latency_time = reader_stuff();
+    }
+
+    response.action = type;
+    response.counter = counter;
+
+    bytes_sended = send(sock, &response, len(response), 0);
+    if (bytes_sended < 0) {
+        perror("Error on send");
+        close(sock);
+        return NULL;
+    }
+
+    close(sock);
+    sem_post(&sem_threads);
+    return NULL;
+}
+
+
+int initialize_server_connection(char *IP, char *port) {
+
+    sem_init(&sem_threads, 0, 600);
+
+    char *endptr;
+    long valor = strtol(port, &endptr, 10);
+    if (*endptr != '\0') {
+        fprintf(stderr, "Invalid Port: %s\n", port);
+        return -1;
+    }
+
+    struct sockaddr_in server_addr;
+    unsigned short host_port = (unsigned short)valor;
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Error on socket");
+        return -1;
+    }
 
     int opt = 1;
-    setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("error(setsockopt(SO_REUSEADDR) failed: ");
+        return -1;
+    }
 
     server_addr.sin_family = AF_INET;
     server_addr.sin_addr.s_addr = inet_addr(IP);
-    server_addr.sin_port = htons(atoi(port));
+    server_addr.sin_port = htons(host_port);
 
     if (bind(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Error on bind");
         close(sockfd);
         return -1;
     }
 
-    if (listen(sockfd, 10) < 0) {
+    if (listen(sockfd, 600) < 0) {
+        perror("Error on listen");
         close(sockfd);
         return -1;
     }
 
-    return sockfd;
+    while (1) {
+
+        sem_wait(&sem_threads);  
+
+        struct sockaddr_in client_addr;
+        struct sockets sockets;
+        socklen_t client_len = sizeof(client_addr);
+
+        // Revisar lo del sem_val, modo incorrecto, hacer mutex ----------------------------------------------
+        int sem_val;
+
+        sem_getvalue(&sem_threads,&sem_val);
+
+        sockets.server_sockets[sem_val] = accept(sockfd, (struct sockaddr *)&client_addr, &client_len);
+        if (sockets.server_sockets[sem_val] < 0) {
+            perror("Error on accept");
+            close(sockfd);
+            return -1;
+        }
+
+        if (pthread_create(&receiver_thread[sem_val], NULL, receive_loop_server, 
+                       &sockets.server_sockets[sem_val]) != 0) {
+            perror("Error on pthread");
+            for (int i = 0; i < sem_val; i++) {
+                close(sockets.server_sockets[i]);
+            }
+            close(sockfd);
+            return -1;
+        }
+
+    }
+
+    return 0;
 }
 
-int initialize_client_connection(char *IP, char *port) {
-    int sockfd;
-    struct sockaddr_in server_addr;
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) return -1;
-
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = inet_addr(IP);
-    server_addr.sin_port = htons(atoi(port));
-
-    if (connect(sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        close(sockfd);
+int initialize_client_connection(char *IP, char *port, int arg_clients, int mode_func) {
+    mode = mode_func;
+    int num_clients = 0;
+    char *endptr;
+    long valor = strtol(port, &endptr, 10);
+    if (*endptr != '\0') {
+        fprintf(stderr, "Invalid Port: %s\n", port);
         return -1;
     }
 
-    return sockfd;
+
+    char net_info[2];
+    net_info[0] = IP;
+    net_info[1] = port;
+    net_info[2] = num_clients+1;
+    
+    while(num_clients < arg_clients) {
+        if (pthread_create(&receiver_thread[num_clients], NULL, receive_loop_client, 
+                        &net_info) != 0) {
+            perror("Error on pthread_create");
+            return -1;
+        }
+
+        num_clients++;
+    }
+    return 0;
 }
