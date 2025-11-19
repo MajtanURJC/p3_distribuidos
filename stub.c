@@ -10,12 +10,13 @@ pthread_t temp_threads[MAX_THREADS];
 int thread_free[MAX_THREADS];
 
 pthread_mutex_t writer_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t reader_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t mix_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int num_writer = 0;
 int writers_waiting = 0;
 int writer_active = 0;
-int readers = 0;
+int readers_waiting = 0;
 
 pthread_cond_t ok_read  = PTHREAD_COND_INITIALIZER;
 pthread_cond_t ok_write = PTHREAD_COND_INITIALIZER;
@@ -299,9 +300,8 @@ int writer_stuff(int id, struct response response, int sock) {
     pthread_mutex_lock(&mix_mutex);
     writers_waiting++;
 
-    while (priority_mode == 0 && readers > 0) {
+    while (priority_mode == 0 && readers_waiting > 0)
         pthread_cond_wait(&ok_write, &mix_mutex);
-    }
 
     clock_gettime(CLOCK_MONOTONIC, &t_enter);
 
@@ -330,7 +330,7 @@ int writer_stuff(int id, struct response response, int sock) {
         pthread_cond_signal(&ok_write);
 
     response.latency_time = (t_enter.tv_sec * 1000000000L + t_enter.tv_nsec) -
-           (t_start.tv_sec * 1000000000L + t_start.tv_nsec);
+                            (t_start.tv_sec * 1000000000L + t_start.tv_nsec);
     response.counter = num;
 
     pthread_mutex_unlock(&mix_mutex);
@@ -344,24 +344,25 @@ int writer_stuff(int id, struct response response, int sock) {
     return 0;
 }
 
-
 int reader_stuff(int id, struct response response, int sock) {
+    pthread_mutex_lock(&reader_mutex);
+    readers_waiting++;
+    pthread_mutex_unlock(&reader_mutex);
+
     struct timespec t_start, t_enter;
     clock_gettime(CLOCK_MONOTONIC, &t_start);
 
     pthread_mutex_lock(&mix_mutex);
-
-    while (
-        writer_active ||
-        (priority_mode == 1 && writers_waiting > 0)
-    ) {
+    while (writer_active || (priority_mode == 1 && writers_waiting > 0))
         pthread_cond_wait(&ok_read, &mix_mutex);
-    }
 
     clock_gettime(CLOCK_MONOTONIC, &t_enter);
-    readers++;  
     pthread_mutex_unlock(&mix_mutex);
-    
+
+    pthread_mutex_lock(&reader_mutex);
+    readers_waiting--;
+    pthread_mutex_unlock(&reader_mutex);
+
     int ms = 75 + rand() % 76;
     usleep(ms * 1000);
 
@@ -369,23 +370,24 @@ int reader_stuff(int id, struct response response, int sock) {
     printf("[READER #%d] lee contador con valor %d\n", id, num);
 
     pthread_mutex_lock(&mix_mutex);
-    readers--;
-    if (readers == 0)
+    if (readers_waiting == 0)
         pthread_cond_signal(&ok_write);
-        
-    response.latency_time = (t_enter.tv_sec * 1000000000L + t_enter.tv_nsec) -
-           (t_start.tv_sec * 1000000000L + t_start.tv_nsec);
 
+    response.latency_time = (t_enter.tv_sec * 1000000000L + t_enter.tv_nsec) -
+                            (t_start.tv_sec * 1000000000L + t_start.tv_nsec);
     response.counter = num;
 
-    int sended = send(sock,&response,sizeof(response),0);
-    if(sended < 0) {
-        perror("Error on writers send");
+    int sended = send(sock, &response, sizeof(response), 0);
+    if (sended < 0) {
+        perror("Error on readers send");
+        pthread_mutex_unlock(&mix_mutex);
         return -1;
     }
+
     pthread_mutex_unlock(&mix_mutex);
     return 0;
 }
+
 
 void set_priority(int priority) {
     priority_mode = priority;
