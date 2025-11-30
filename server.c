@@ -27,33 +27,34 @@ int main(int argc, char *argv[]) {
                 break;
 
             case '?':
-                fprintf(stderr,"Incorrect arguments\n");
+                break;
+
+            default:
+                fprintf(stderr, "Incorrect Argument\n");
                 exit(1);
         }
     }
 
-    // Validar argumentos
     if (port == NULL || priority == NULL) {
-        fprintf(stderr,"Not enough arguments.\n");
+        fprintf(stderr, "Wrong argument or number of arguments.\n");
         exit(1);
     }
 
-    // Interpretar prioridad
     if (strcmp(priority, "writer") == 0) {
         set_priority(1);
     } else if (strcmp(priority, "reader") == 0) {
         set_priority(0);
     } else {
-        fprintf(stderr,"Unvalid priority\n");
+        fprintf(stderr, "Unvalid priority\n");
         exit(1);
     }
 
-
     int result = initialize_server_connection(port);
     if (result != 0) {
-        fprintf(stderr, "Error iniciating the server\n");
+        fprintf(stderr, "Error initiating the server or stoppped by user\n");
         exit(1);
     }
 
     return 0;
 }
+

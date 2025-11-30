@@ -11,6 +11,8 @@ int main(int argc, char *argv[]) {
     char *mode_str = NULL;
     int threads = 0;
     int mode = 0;
+    char *endptr;
+    int errno = 0;
 
     int option_index = 0;
     int c;
@@ -24,28 +26,40 @@ int main(int argc, char *argv[]) {
     };
 
     while ((c = getopt_long(argc, argv, "i:p:m:t:", long_options, &option_index)) != -1) {
-        switch(c) {
+        switch (c) {
             case 'i':
                 ip = strdup(optarg);
                 break;
+
             case 'p':
                 port_str = strdup(optarg);
                 break;
+
             case 'm':
                 mode_str = strdup(optarg);
                 break;
+
             case 't':
-                threads = atoi(optarg);
+                threads = strtol(optarg, &endptr, 10);
+
+                if (errno != 0 || *endptr != '\0') {
+                    fprintf(stderr, "Valor inválido para -t: %s\n", optarg);
+                    exit(1);
+                }
+
                 break;
+
             case '?':
+                break;
+
             default:
-                fprintf(stderr, "Uso: %s --ip <IP> --port <PORT> --mode writer/reader --threads <NUM>\n", argv[0]);
-                exit(EXIT_FAILURE);
+                fprintf(stderr, "Incorrect Argument\n");
+                exit(1);
         }
     }
 
     if (ip == NULL || port_str == NULL || mode_str == NULL || threads <= 0) {
-        fprintf(stderr, "Not enought arguments\n");
+        fprintf(stderr, "Wrong argument or number of arguments.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -63,7 +77,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    free(ip);
+    free(ip);        // Necesario hacer free porque strdup hace malloc internamente
     free(port_str);
     free(mode_str);
 

@@ -2,6 +2,7 @@
 #define STUB_H
 
 #define _POSIX_C_SOURCE 200809L
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -14,8 +15,7 @@
 #include <semaphore.h>
 #include <time.h>
 #include <sys/time.h>
-
-
+#include <stdatomic.h>
 
 #define MAX_THREADS 600
 
@@ -51,13 +51,12 @@ struct client_info {
     int id;
 };
 
-
 int initialize_server_connection(char *port);
 int initialize_client_connection(char *IP, char *port, int num_clients, int mode);
-int ready_to_shutdown();
-int reader_stuff(int id, struct response, int sock);
-int writer_stuff(int id, struct response, int sock);
+
+int reader_stuff(int id, struct response resp, int sock);
+int writer_stuff(int id, struct response resp, int sock);
+
 void set_priority(int priority);
 
 #endif
-
